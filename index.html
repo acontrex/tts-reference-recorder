@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TTSお手本録音</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, "Hiragino Kaku Gothic ProN", sans-serif; margin: 0; padding: 16px; line-height: 1.6; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { font-size: 13px; opacity: .75; margin-bottom: 12px; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0 20px; }
+  .progress { font-weight: 700; }
+  button { font-size: 14px; padding: 6px 12px; border-radius: 8px; border: 1px solid #8886; background: Canvas; cursor: pointer; }
+  button.rec { border-color: #c0392b; color: #c0392b; font-weight: 700; }
+  button.rec.recording { background: #c0392b; color: #fff; }
+  button:disabled { opacity: .4; cursor: default; }
+  h2 { font-size: 15px; margin: 22px 0 8px; border-bottom: 1px solid #8884; padding-bottom: 4px; }
+  .row { border: 1px solid #8883; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .row .txt { margin-bottom: 6px; }
+  .row .id { font-weight: 700; margin-right: 8px; }
+  .row .ops { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .status { font-size: 12px; opacity: .8; }
+  .status.done { color: #1e8449; font-weight: 700; opacity: 1; }
+  .err { color: #c0392b; font-size: 13px; margin-top: 6px; white-space: pre-wrap; }
+  audio { display: block; margin-top: 8px; width: 100%; max-width: 420px; height: 36px; }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>TTSお手本録音</h1>
+  <div class="sub">28文のお手本読み上げを録音するページです。録音はこのブラウザの中に保存されます。「ZIPで書き出し」でまとめてダウンロードし、Muse に渡してください（Colab で参照音声クローン合成に使います）。</div>
+  <div class="bar">
+    <span class="progress" id="progress">0/28 録音済み</span>
+    <button id="exportBtn">ZIPで書き出し</button>
+    <span class="status" id="exportMsg"></span>
+  </div>
+  <div id="list"></div>
+</main>
+<script>
+const SENTENCES = [
+["A1","A_読み","一日はあっという間に過ぎたが、一日中雨だった日もあった。"],
+["A2","A_読み","彼はピアノが上手で、川の上手には古い水車小屋がある。"],
+["A3","A_読み","明日行くと言ったのに、彼は今日来て、昨日は姿を見せなかった。"],
+["A4","A_読み","人気のない市場は静かだったが、市場の動向には人気銘柄が影響していた。"],
+["A5","A_読み","彼は上手な言い方で、行った先々で好かれた。"],
+["A6","A_読み","間もなく、間の取り方ひとつで、場の空気が変わった。"],
+["B1","B_アクセント","橋の端に箸を置いた。"],
+["B2","B_アクセント","雨の日は飴をなめて、牡蠣より柿を選んだ。"],
+["B3","B_アクセント","今朝の朝日は、明日の朝には見られないかもしれない。"],
+["B4","B_アクセント","彼は帰る支度をしながら、カエルの鳴き声に耳を澄ました。"],
+["C1","C_数字","2026年11月21日、午前9時15分に藤沢駅を出発します。"],
+["C2","C_数字","第3四半期の売上高は6,971億円で、前年同期比1.5倍に増えました。"],
+["C3","C_数字","チケットは3,800円、割引後は2,980円になります。"],
+["C4","C_数字","Google ColabのGPUで、AnthropicのIPO関連ニュースをAIに要約させた。"],
+["D1","D_焦点","私が行くんじゃない。彼が行くんです。"],
+["D2","D_焦点","本当に、もう行ってしまったんですか？"],
+["D3","D_焦点","必要なのは、速さではなく、正確さと、なにより誠実さです。"],
+["D4","D_焦点","雨は止んだ。けれど、風はまだ止んでいなかった。"],
+["E1","E_演技","本日、国内の主要な株価指数は大きく値上がりしました。市場では買い注文が膨らんでいます。"],
+["E2","E_演技","やった！　ついに完成したんだ。これで明日、みんなに発表できる！"],
+["E3","E_演技","静かにしてください。今、とても大事なことを話しています。"],
+["E4","E_演技","その夜、彼は何も言わずに、古い手紙をそっと引き出しに戻した。"],
+["E5","E_演技","危ない！　そっちに行っちゃだめだ、今すぐ戻って！"],
+["E6","E_演技","大丈夫。今日はもう終わりにして、ゆっくり休もう。"],
+["F1","F_アナウンス","まもなく、3番線に、藤沢行きの電車がまいります。白線の内側までお下がりください。"],
+["F2","F_アナウンス","この電車は、途中、大船、戸塚、横浜に停まります。終点は東京です。"],
+["F3","F_アナウンス","お急ぎのところ恐れ入ります。この先、信号確認のため、約5分停車いたします。"],
+["F4","F_アナウンス","次は、終点、藤沢です。お忘れ物のないよう、ご注意ください。"]
+];
+
+// ---------- IndexedDB ----------
+let db;
+function openDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open("tts-ref-recorder", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("refs", { keyPath: "id" });
+    r.onsuccess = () => { db = r.result; res(); };
+    r.onerror = () => rej(r.error);
+  });
+}
+function dbPut(rec) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction("refs", "readwrite");
+    tx.objectStore("refs").put(rec);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+function dbDel(id) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction("refs", "readwrite");
+    tx.objectStore("refs").delete(id);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+function dbAll() {
+  return new Promise((res, rej) => {
+    const rq = db.transaction("refs").objectStore("refs").getAll();
+    rq.onsuccess = () => res(rq.result || []);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+
+// ---------- WAV encode (16bit PCM mono) ----------
+function encodeWAV(samples, sampleRate) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buffer);
+  const wstr = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
+  wstr(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true); wstr(8, "WAVE");
+  wstr(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true); v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true); wstr(36, "data"); v.setUint32(40, samples.length * 2, true);
+  let off = 44;
+  for (let i = 0; i < samples.length; i++, off += 2) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
+// ---------- Recording ----------
+let rec = null; // { stream, ctx, proc, chunks, id }
+async function startRec(id, ui) {
+  if (rec) return;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    ui.err.textContent = micErrorText(e);
+    return;
+  }
+  const ctx = new AudioContext();
+  const src = ctx.createMediaStreamSource(stream);
+  const proc = ctx.createScriptProcessor(4096, 1, 1);
+  const chunks = [];
+  proc.onaudioprocess = ev => chunks.push(new Float32Array(ev.inputBuffer.getChannelData(0)));
+  src.connect(proc); proc.connect(ctx.destination);
+  rec = { stream, ctx, proc, chunks, id, rate: ctx.sampleRate };
+  ui.recBtn.textContent = "■ 停止して保存";
+  ui.recBtn.classList.add("recording");
+  ui.err.textContent = "";
+}
+async function stopRec(ui) {
+  if (!rec) return;
+  const { stream, ctx, proc, chunks, id, rate } = rec; rec = null;
+  proc.disconnect(); stream.getTracks().forEach(t => t.stop()); ctx.close();
+  const total = chunks.reduce((a, c) => a + c.length, 0);
+  const flat = new Float32Array(total);
+  let o = 0; for (const c of chunks) { flat.set(c, o); o += c.length; }
+  const blob = encodeWAV(flat, rate);
+  await dbPut({ id, blob, dur: total / rate, at: Date.now() });
+  ui.recBtn.textContent = "● 録り直し";
+  ui.recBtn.classList.remove("recording");
+  refresh();
+}
+function micErrorText(e) {
+  if (e && (e.name === "NotAllowedError" || e.name === "SecurityError"))
+    return "マイクの使用が許可されませんでした。\n対処: アドレスバー左端のアイコン → サイトの設定 → マイク → 許可 にして再読み込みしてください。\nMac の システム設定 → プライバシーとセキュリティ → マイク でブラウザがオンかも確認してください。";
+  if (e && e.name === "NotFoundError")
+    return "使えるマイクが見つかりませんでした。マイクが接続されているか確認してください。下の「ファイル取込」から、他のアプリで録った音声も登録できます。";
+  return "録音を開始できませんでした (" + (e && e.name ? e.name : "不明なエラー") + ")。下の「ファイル取込」も使えます。";
+}
+
+// ---------- ZIP (store, no compression) ----------
+const CRC_TABLE = (() => {
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c; }
+  return t;
+})();
+function crc32(u8) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+async function buildZip(files) { // files: [{name, blob}]
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0;
+  for (const f of files) {
+    const data = new Uint8Array(await f.blob.arrayBuffer());
+    const name = enc.encode(f.name);
+    const crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+    lh.setUint16(8, 0, true); lh.setUint32(14, crc, true);
+    lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, name.length, true);
+    parts.push(new Uint8Array(lh.buffer), name, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, name.length, true);
+    ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), name);
+    offset += 30 + name.length + data.length;
+  }
+  const cdSize = central.reduce((a, c) => a + c.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: "application/zip" });
+}
+async function exportZip() {
+  const msg = document.getElementById("exportMsg");
+  const all = await dbAll();
+  if (!all.length) { msg.textContent = "まだ録音がありません。"; return; }
+  const byId = Object.fromEntries(all.map(r => [r.id, r]));
+  const files = [];
+  const manifest = [];
+  for (const [id, cat, text] of SENTENCES) {
+    if (byId[id]) { files.push({ name: "references/" + id + ".wav", blob: byId[id].blob }); manifest.push({ id, cat, text }); }
+  }
+  files.push({ name: "references/manifest.json", blob: new Blob([JSON.stringify(manifest, null, 1)], { type: "application/json" }) });
+  const zip = await buildZip(files);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(zip);
+  a.download = "tts_references.zip";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  msg.textContent = all.length + "件を書き出しました。";
+}
+
+// ---------- UI ----------
+const uis = {};
+function buildUI() {
+  const list = document.getElementById("list");
+  let curCat = null;
+  for (const [id, cat, text] of SENTENCES) {
+    if (cat !== curCat) { curCat = cat; const h = document.createElement("h2"); h.textContent = cat; list.appendChild(h); }
+    const row = document.createElement("div"); row.className = "row";
+    row.innerHTML = '<div class="txt"><span class="id"></span><span class="tx"></span></div>' +
+      '<div class="ops"><button class="rec">● 録音</button>' +
+      '<button class="del">削除</button>' +
+      '<label><button class="imp" type="button">ファイル取込</button><input type="file" accept="audio/*"></label>' +
+      '<span class="status">未録音</span></div><div class="err"></div>';
+    row.querySelector(".id").textContent = id;
+    row.querySelector(".tx").textContent = text;
+    const ui = {
+      recBtn: row.querySelector(".rec"), delBtn: row.querySelector(".del"),
+      status: row.querySelector(".status"), err: row.querySelector(".err"),
+      file: row.querySelector("input[type=file]"), audio: null, row
+    };
+    uis[id] = ui;
+    ui.recBtn.onclick = () => { if (rec && rec.id === id) stopRec(ui); else if (!rec) startRec(id, ui); };
+    ui.delBtn.onclick = async () => { await dbDel(id); refresh(); };
+    row.querySelector(".imp").onclick = () => ui.file.click();
+    ui.file.onchange = async () => {
+      const f = ui.file.files[0]; if (!f) return;
+      try {
+        const ctx = new OfflineAudioContext(1, 1, 44100);
+        const ab = await f.arrayBuffer();
+        const buf = await new AudioContext().decodeAudioData(ab);
+        const ch = buf.getChannelData(0);
+        await dbPut({ id, blob: encodeWAV(ch, buf.sampleRate), dur: buf.duration, at: Date.now() });
+        ui.err.textContent = "";
+      } catch (e) { ui.err.textContent = "このファイルは読み込めませんでした。wav / m4a / mp3 などでお試しください。"; }
+      ui.file.value = "";
+      refresh();
+    };
+    list.appendChild(row);
+  }
+  document.getElementById("exportBtn").onclick = exportZip;
+}
+async function refresh() {
+  const all = await dbAll();
+  const byId = Object.fromEntries(all.map(r => [r.id, r]));
+  document.getElementById("progress").textContent = all.length + "/28 録音済み";
+  for (const [id] of SENTENCES) {
+    const ui = uis[id], r = byId[id];
+    if (ui.audio) { ui.audio.remove(); ui.audio = null; }
+    if (r) {
+      ui.status.textContent = "録音済み（" + r.dur.toFixed(1) + "秒）";
+      ui.status.classList.add("done");
+      ui.recBtn.textContent = "● 録り直し";
+      const audio = document.createElement("audio");
+      audio.controls = true; audio.src = URL.createObjectURL(r.blob);
+      ui.row.appendChild(audio); ui.audio = audio;
+    } else {
+      ui.status.textContent = "未録音"; ui.status.classList.remove("done");
+      ui.recBtn.textContent = "● 録音";
+    }
+  }
+}
+openDB().then(() => { buildUI(); refresh(); });
+</script>
+</body>
+</html>
